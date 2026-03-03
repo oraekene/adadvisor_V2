@@ -28,6 +28,7 @@ function cn(...inputs: ClassValue[]) {
 }
 
 export default function App() {
+  console.log("App component rendering...");
   const [view, setView] = useState<'dashboard' | 'new' | 'results'>('dashboard');
   const [simulations, setSimulations] = useState<Simulation[]>([]);
   const [loading, setLoading] = useState(false);
@@ -61,13 +62,18 @@ export default function App() {
     fetchSimulations();
   }, []);
 
-  const fetchSimulations = async () => {
+  const fetchSimulations = async (retries = 3) => {
     try {
       const res = await fetch('/api/simulations');
+      if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
       const data = await res.json();
       setSimulations(data);
     } catch (err) {
       console.error('Failed to fetch simulations', err);
+      if (retries > 0) {
+        console.log(`Retrying fetch... (${retries} attempts left)`);
+        setTimeout(() => fetchSimulations(retries - 1), 2000);
+      }
     }
   };
 

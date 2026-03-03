@@ -40,6 +40,29 @@ db.exec(`
   )
 `);
 
+// Migration: Add missing columns if they don't exist
+const columns = db.prepare("PRAGMA table_info(simulations)").all();
+const columnNames = (columns as any[]).map((c: any) => c.name);
+
+const requiredColumns = [
+  { name: 'product_description', type: 'TEXT' },
+  { name: 'usp', type: 'TEXT' },
+  { name: 'campaign_goal', type: 'TEXT' },
+  { name: 'discovered_click_rate', type: 'REAL' },
+  { name: 'discovered_conversion_rate', type: 'REAL' },
+  { name: 'ad_guide', type: 'TEXT' }
+];
+
+for (const col of requiredColumns) {
+  if (!columnNames.includes(col.name)) {
+    try {
+      db.exec(`ALTER TABLE simulations ADD COLUMN ${col.name} ${col.type}`);
+    } catch (e) {
+      console.error(`Failed to add column ${col.name}:`, e);
+    }
+  }
+}
+
 // API Routes
 app.get("/api/simulations", (req, res) => {
   try {
