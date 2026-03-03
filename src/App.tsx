@@ -103,7 +103,7 @@ Target ROAS: ${targetROAS}x
 4. BUDGET CALCULATION
 - Formula: Total Estimated Revenue / Target ROAS
 - Calculation: $${Math.round(sim.audience_size * (sim.discovered_conversion_rate || 0) * sim.product_price).toLocaleString()} / ${targetROAS}
-- Suggested Budget: $${Math.round(budget).toLocaleString()}
+- Suggested Budget: $${Math.ceil(budget).toLocaleString()}
 
 --------------------------------------------------
 This budget represents the maximum combined spend (creator fee + ad spend) 
@@ -308,9 +308,9 @@ Use these findings to negotiate creator rates and optimize your ad creative.
         ...currentFormData,
         // Suggested bid prices based on discovered ROI
         // Low price: 5x ROAS, Med: 3x ROAS, High: 1.5x ROAS
-        predicted_low_price: estimatedRevenue / 5,
-        predicted_med_price: estimatedRevenue / 3,
-        predicted_high_price: estimatedRevenue / 1.5,
+        predicted_low_price: Math.ceil(estimatedRevenue / 5),
+        predicted_med_price: Math.ceil(estimatedRevenue / 3),
+        predicted_high_price: Math.ceil(estimatedRevenue / 1.5),
         discovered_click_rate: clickRate,
         discovered_conversion_rate: buyRate,
         raw_simulation_log: monteCarloLog.join("\n"),
@@ -671,6 +671,7 @@ Use these findings to negotiate creator rates and optimize your ad creative.
                   <PriceCard 
                     tier="Low Risk" 
                     price={activeSim.predicted_low_price} 
+                    cac={activeSim.predicted_low_price / (activeSim.audience_size * (activeSim.discovered_conversion_rate || 0))}
                     probability="95%" 
                     description="Almost guaranteed positive ROI. Safe bet for initial testing."
                     color="emerald"
@@ -681,6 +682,7 @@ Use these findings to negotiate creator rates and optimize your ad creative.
                   <PriceCard 
                     tier="Balanced" 
                     price={activeSim.predicted_med_price} 
+                    cac={activeSim.predicted_med_price / (activeSim.audience_size * (activeSim.discovered_conversion_rate || 0))}
                     probability="70%" 
                     description="Strong chance of breaking even or better. Recommended bid."
                     color="indigo"
@@ -691,6 +693,7 @@ Use these findings to negotiate creator rates and optimize your ad creative.
                   <PriceCard 
                     tier="High Stakes" 
                     price={activeSim.predicted_high_price} 
+                    cac={activeSim.predicted_high_price / (activeSim.audience_size * (activeSim.discovered_conversion_rate || 0))}
                     probability="50%" 
                     description="Flipping a coin. High upside if audience hits perfectly."
                     color="orange"
@@ -1008,7 +1011,7 @@ function InputField({ label, value, onChange, type = 'text' }: { label: string; 
   );
 }
 
-function PriceCard({ tier, price, probability, description, color, isExpanded, onToggle, onDownload }: { tier: string; price: number; probability: string; description: string; color: 'emerald' | 'indigo' | 'orange'; isExpanded?: boolean; onToggle?: () => void; onDownload?: (e: React.MouseEvent) => void }) {
+function PriceCard({ tier, price, probability, description, color, isExpanded, onToggle, onDownload, cac }: { tier: string; price: number; probability: string; description: string; color: 'emerald' | 'indigo' | 'orange'; isExpanded?: boolean; onToggle?: () => void; onDownload?: (e: React.MouseEvent) => void; cac?: number }) {
   const colors = {
     emerald: 'bg-emerald-50 text-emerald-700 border-emerald-100',
     indigo: 'bg-indigo-50 text-indigo-700 border-indigo-100',
@@ -1031,9 +1034,15 @@ function PriceCard({ tier, price, probability, description, color, isExpanded, o
         {isExpanded ? <ChevronUp size={14} className="text-black/20" /> : <ChevronDown size={14} className="text-black/20" />}
       </div>
       <div className="text-[10px] font-bold text-black/40 uppercase tracking-widest mb-1">Total Campaign Budget</div>
-      <div className="text-3xl sm:text-5xl font-black tracking-tighter mb-4">
-        ${price.toLocaleString()}
+      <div className="text-3xl sm:text-5xl font-black tracking-tighter mb-2">
+        ${Math.ceil(price).toLocaleString()}
       </div>
+      {cac !== undefined && (
+        <div className="flex items-center gap-1.5 mb-4">
+          <div className="text-[10px] font-bold text-black/40 uppercase tracking-widest">Target CAC:</div>
+          <div className="text-sm font-bold text-emerald-600">${cac.toFixed(2)}</div>
+        </div>
+      )}
       <p className="text-xs sm:text-sm text-black/60 leading-relaxed mb-6">
         {description}
       </p>

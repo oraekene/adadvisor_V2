@@ -9,8 +9,15 @@ app.use(express.json({ limit: '50mb' }));
 // On Netlify, the filesystem is ephemeral. 
 // For a real deployment, you should use a remote database like Supabase, MongoDB, or PlanetScale.
 // We'll use /tmp for the database so it can at least run, but data will be lost on function cold starts.
-const dbPath = process.env.NODE_ENV === 'production' ? '/tmp/attribution.db' : 'attribution.db';
-const db = new Database(dbPath);
+const dbPath = process.env.NODE_ENV === 'production' ? path.join('/tmp', 'attribution.db') : 'attribution.db';
+let db: Database.Database;
+
+try {
+  db = new Database(dbPath);
+} catch (err) {
+  console.error("Failed to open database at", dbPath, "falling back to in-memory");
+  db = new Database(':memory:');
+}
 
 // Initialize Database
 db.exec(`
