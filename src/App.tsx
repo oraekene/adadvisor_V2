@@ -77,6 +77,47 @@ export default function App() {
     }
   };
 
+  const downloadCalculationFlow = (sim: Simulation, targetROAS: number, budget: number) => {
+    const flow = `
+CALCULATION FLOW: ${sim.business_name} x ${sim.creator_name}
+Target ROAS: ${targetROAS}x
+--------------------------------------------------
+
+1. INPUTS (Starting Guesses)
+- Audience Size: ${sim.audience_size.toLocaleString()}
+- Product Price: $${sim.product_price}
+- Engagement Rate (Guess): ${(sim.engagement_rate * 100).toFixed(2)}%
+- Conversion Rate (Guess): ${(sim.conversion_rate * 100).toFixed(2)}%
+
+2. SIMULATION DISCOVERY (Monte Carlo Results)
+- Discovered Click Rate: ${((sim.discovered_click_rate || 0) * 100).toFixed(4)}%
+  (Calculated by simulating 10,000 agents with psychographic traits)
+- Discovered Conversion Rate: ${((sim.discovered_conversion_rate || 0) * 100).toFixed(4)}%
+  (Calculated by observing purchase decisions among clicking agents)
+
+3. PROJECTIONS
+- Total Estimated Clicks: ${Math.round(sim.audience_size * (sim.discovered_click_rate || 0)).toLocaleString()}
+- Total Estimated Sales: ${Math.round(sim.audience_size * (sim.discovered_conversion_rate || 0)).toLocaleString()}
+- Total Estimated Revenue: $${Math.round(sim.audience_size * (sim.discovered_conversion_rate || 0) * sim.product_price).toLocaleString()}
+
+4. BUDGET CALCULATION
+- Formula: Total Estimated Revenue / Target ROAS
+- Calculation: $${Math.round(sim.audience_size * (sim.discovered_conversion_rate || 0) * sim.product_price).toLocaleString()} / ${targetROAS}
+- Suggested Budget: $${Math.round(budget).toLocaleString()}
+
+--------------------------------------------------
+This budget represents the maximum combined spend (creator fee + ad spend) 
+to maintain a ${targetROAS}x ROAS based on the simulated audience behavior.
+`;
+
+    const blob = new Blob([flow], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${sim.business_name.replace(/\s+/g, '_')}_${targetROAS}x_Budget_Flow.txt`;
+    a.click();
+  };
+
   const downloadFullReport = (sim: Simulation) => {
     const report = `
 ATTRIBUTION AI - FULL SIMULATION REPORT
@@ -635,6 +676,7 @@ Use these findings to negotiate creator rates and optimize your ad creative.
                     color="emerald"
                     isExpanded={expandedPriceCard === 'low'}
                     onToggle={() => setExpandedPriceCard(expandedPriceCard === 'low' ? null : 'low')}
+                    onDownload={(e) => { e.stopPropagation(); downloadCalculationFlow(activeSim, 5, activeSim.predicted_low_price); }}
                   />
                   <PriceCard 
                     tier="Balanced" 
@@ -644,6 +686,7 @@ Use these findings to negotiate creator rates and optimize your ad creative.
                     color="indigo"
                     isExpanded={expandedPriceCard === 'med'}
                     onToggle={() => setExpandedPriceCard(expandedPriceCard === 'med' ? null : 'med')}
+                    onDownload={(e) => { e.stopPropagation(); downloadCalculationFlow(activeSim, 3, activeSim.predicted_med_price); }}
                   />
                   <PriceCard 
                     tier="High Stakes" 
@@ -653,6 +696,7 @@ Use these findings to negotiate creator rates and optimize your ad creative.
                     color="orange"
                     isExpanded={expandedPriceCard === 'high'}
                     onToggle={() => setExpandedPriceCard(expandedPriceCard === 'high' ? null : 'high')}
+                    onDownload={(e) => { e.stopPropagation(); downloadCalculationFlow(activeSim, 1.5, activeSim.predicted_high_price); }}
                   />
                 </div>
               )}
@@ -669,8 +713,8 @@ Use these findings to negotiate creator rates and optimize your ad creative.
                       <ResponsiveContainer width="100%" height="100%">
                         <AreaChart data={[
                           { name: 'Impressions', val: activeSim.audience_size },
-                          { name: 'Clicks', val: activeSim.audience_size * activeSim.engagement_rate },
-                          { name: 'Sales', val: activeSim.audience_size * activeSim.engagement_rate * activeSim.conversion_rate },
+                          { name: 'Clicks', val: activeSim.audience_size * (activeSim.discovered_click_rate || activeSim.engagement_rate) },
+                          { name: 'Sales', val: activeSim.audience_size * (activeSim.discovered_conversion_rate || (activeSim.engagement_rate * activeSim.conversion_rate)) },
                         ]}>
                           <defs>
                             <linearGradient id="colorVal" x1="0" y1="0" x2="0" y2="1">
@@ -964,7 +1008,7 @@ function InputField({ label, value, onChange, type = 'text' }: { label: string; 
   );
 }
 
-function PriceCard({ tier, price, probability, description, color, isExpanded, onToggle }: { tier: string; price: number; probability: string; description: string; color: 'emerald' | 'indigo' | 'orange'; isExpanded?: boolean; onToggle?: () => void }) {
+function PriceCard({ tier, price, probability, description, color, isExpanded, onToggle, onDownload }: { tier: string; price: number; probability: string; description: string; color: 'emerald' | 'indigo' | 'orange'; isExpanded?: boolean; onToggle?: () => void; onDownload?: (e: React.MouseEvent) => void }) {
   const colors = {
     emerald: 'bg-emerald-50 text-emerald-700 border-emerald-100',
     indigo: 'bg-indigo-50 text-indigo-700 border-indigo-100',
@@ -1011,6 +1055,15 @@ function PriceCard({ tier, price, probability, description, color, isExpanded, o
                 If the creator asks for more than this, the simulation suggests you will likely lose money or fail to meet your target ROI.
               </p>
             </div>
+
+            <button 
+              onClick={onDownload}
+              className="w-full py-3 rounded-xl border border-black/10 text-xs font-bold uppercase tracking-widest hover:bg-black hover:text-white transition-all flex items-center justify-center gap-2"
+            >
+              <Download size={14} />
+              Download Calculation Flow
+            </button>
+
             <p className="text-[10px] text-black/40 italic">
               Calculated by simulating 10,000 agents and projecting ROI across your full audience.
             </p>

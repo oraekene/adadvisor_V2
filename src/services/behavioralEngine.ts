@@ -19,8 +19,9 @@ export function calculateDecision(persona: Persona, productPrice: number, engage
   if (persona.decision_style === 'Impulsive') clickProb += 0.2;
   if (persona.decision_style === 'Rational') clickProb -= 0.1;
 
-  // Normalize click probability
-  clickProb = Math.min(Math.max(clickProb, 0.05), 0.95);
+  // Normalize click probability and scale by the creator's engagement rate (starting guess)
+  // This ensures the personality interest is grounded in the realistic reach of the creator.
+  clickProb = Math.min(Math.max(clickProb, 0.05), 0.95) * engagementRate;
 
   const clicked = Math.random() < clickProb;
 
