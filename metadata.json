@@ -1,0 +1,5 @@
+{
+  "name": "Remix: Attribution AI V2",
+  "description": "Simulated funnel attribution model using AI agents to predict ad ROI. Netlify-ready with serverless functions.",
+  "requestFramePermissions": []
+}
