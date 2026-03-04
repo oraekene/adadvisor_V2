@@ -52,6 +52,16 @@ export async function estimateBenchmarks(creatorData: any, businessData: any) {
 }
 
 export async function generateAdGuide(simulation: any, personas: Persona[]) {
+  const estimatedClicks = Math.round(simulation.audience_size * (simulation.discovered_click_rate || 0));
+  const estimatedSales = Math.round(simulation.audience_size * (simulation.discovered_conversion_rate || 0));
+  const estimatedRevenue = estimatedSales * simulation.product_price;
+  
+  // Calculate effective metrics for the "Balanced" (3x ROAS) tier
+  const balancedBudget = simulation.predicted_med_price;
+  const effectiveCPC = estimatedClicks > 0 ? balancedBudget / estimatedClicks : 0;
+  const effectiveCPM = (balancedBudget / simulation.audience_size) * 1000;
+  const effectiveCPA = estimatedSales > 0 ? balancedBudget / estimatedSales : 0;
+
   const response = await ai.models.generateContent({
     model: "gemini-3-flash-preview",
     contents: `Generate a high-converting, professional ad creation guide for a creator partnership.
@@ -66,24 +76,39 @@ export async function generateAdGuide(simulation: any, personas: Persona[]) {
     TARGETING:
     Target Creator: ${simulation.creator_name}
     Target Audience: ${simulation.demographics}
+    Audience Size: ${simulation.audience_size.toLocaleString()}
     
-    AUDIENCE PSYCHOGRAPHICS (Based on Simulation):
+    SIMULATION DISCOVERY DATA:
+    - Discovered Click Rate: ${((simulation.discovered_click_rate || 0) * 100).toFixed(4)}%
+    - Discovered Conversion Rate: ${((simulation.discovered_conversion_rate || 0) * 100).toFixed(4)}%
+    - Estimated Clicks: ${estimatedClicks.toLocaleString()}
+    - Estimated Sales: ${estimatedSales.toLocaleString()}
+    - Estimated Revenue: $${estimatedRevenue.toLocaleString()}
+    
+    BUDGET CONTEXT (Balanced 3x ROAS Tier):
+    - Total Budget: $${balancedBudget.toLocaleString()}
+    - Effective CPC (Cost Per Click): $${effectiveCPC.toFixed(2)}
+    - Effective CPM (Cost Per 1,000 Impressions): $${effectiveCPM.toFixed(2)}
+    - Effective CPA (Target Cost Per Acquisition): $${effectiveCPA.toFixed(2)}
+    
+    AUDIENCE PSYCHOGRAPHICS:
     Top Personas: ${personas.map((p: any) => `${p.vals_segment} (${p.decision_style} style)`).join(', ')}
-    
-    BID/BUDGET CONTEXT:
-    The simulation suggests a campaign budget of $${simulation.predicted_med_price.toLocaleString()} for a balanced ROI.
     
     The guide MUST include:
     1. The "Big Hook": 3 specific opening lines tailored to the dominant VALS segments.
     2. Creative Direction: Detailed visual storyboard for a 30-60 second video.
-    3. Messaging Strategy: How to weave the USPs (${simulation.usp}) into the creator's natural content style.
+    3. Messaging Strategy: How to weave the USPs into the creator's natural content style.
     4. Pricing Presentation: How to anchor the $${simulation.product_price} price point.
     5. Call to Action: A specific, trackable CTA.
-    6. Media Buying Advice: Explain how the suggested bid of $${simulation.predicted_med_price.toLocaleString()} should be used (e.g., as a flat fee to the creator or as a total ad spend budget).
+    6. Media Buying Advice: 
+       - Provide a deterministic breakdown of the $${balancedBudget.toLocaleString()} budget.
+       - Include a "Platform Input" section showing exactly what to enter into TikTok/Meta Ads Manager (e.g., Daily Budget, Bid Cap, Optimization Goal).
+       - Provide a 30-day spend schedule (Day 1-7: Testing, Day 8-30: Scaling).
+       - Explain how to use the Effective CPC ($${effectiveCPC.toFixed(2)}) as a benchmark for pausing underperforming creative.
     
     IMPORTANT: Do NOT hallucinate unrelated products. Focus strictly on ${simulation.business_name} and its description: ${simulation.product_description}.`,
     config: {
-      systemInstruction: "You are a world-class ad strategist and creative director. Write in a clear, professional, and actionable tone. Use Markdown formatting.",
+      systemInstruction: "You are a world-class ad strategist and media buyer. You combine creative vision with hard data. Write in a clear, professional, and actionable tone. Use Markdown formatting.",
     }
   });
   return response.text;
