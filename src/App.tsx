@@ -89,10 +89,10 @@ Target ROAS: ${targetROAS}x
 --------------------------------------------------
 
 1. INPUTS (Starting Guesses)
-- Audience Size: ${sim.audience_size.toLocaleString()}
-- Product Price: $${sim.product_price}
-- Engagement Rate (Guess): ${(sim.engagement_rate * 100).toFixed(2)}%
-- Conversion Rate (Guess): ${(sim.conversion_rate * 100).toFixed(2)}%
+- Audience Size: ${(sim.audience_size || 0).toLocaleString()}
+- Product Price: $${sim.product_price || 0}
+- Engagement Rate (Guess): ${((sim.engagement_rate || 0) * 100).toFixed(2)}%
+- Conversion Rate (Guess): ${((sim.conversion_rate || 0) * 100).toFixed(2)}%
 - Creator Fee: $${(sim.creator_fee || 0).toLocaleString()}
 - CPM: $${(sim.cpm || 0).toFixed(2)}
 
@@ -103,24 +103,24 @@ Target ROAS: ${targetROAS}x
   (Calculated by observing purchase decisions among clicking agents)
 
 3. PROJECTIONS
-- Total Estimated Clicks: ${Math.round(sim.audience_size * (sim.discovered_click_rate || 0)).toLocaleString()}
-- Total Estimated Sales: ${Math.round(sim.audience_size * (sim.discovered_conversion_rate || 0)).toLocaleString()}
-- Total Estimated Revenue: $${Math.round(sim.audience_size * (sim.discovered_conversion_rate || 0) * sim.product_price).toLocaleString()}
+- Total Estimated Clicks: ${Math.round((sim.audience_size || 0) * (sim.discovered_click_rate || 0)).toLocaleString()}
+- Total Estimated Sales: ${Math.round((sim.audience_size || 0) * (sim.discovered_conversion_rate || 0)).toLocaleString()}
+- Total Estimated Revenue: $${Math.round((sim.audience_size || 0) * (sim.discovered_conversion_rate || 0) * (sim.product_price || 0)).toLocaleString()}
 
 4. BUDGET CALCULATION
 - Formula: Total Estimated Revenue / Target ROAS
-- Calculation: $${Math.round(sim.audience_size * (sim.discovered_conversion_rate || 0) * sim.product_price).toLocaleString()} / ${targetROAS}
-- Suggested Budget: $${Math.ceil(budget).toLocaleString()}
+- Calculation: $${Math.round((sim.audience_size || 0) * (sim.discovered_conversion_rate || 0) * (sim.product_price || 0)).toLocaleString()} / ${targetROAS}
+- Suggested Budget: $${Math.ceil(budget || 0).toLocaleString()}
 
 5. DETERMINISTIC MEDIA BUYING BRIDGE
-- Reach Cost (to acquire ${sim.audience_size.toLocaleString()} impressions): $${Math.round((sim.audience_size / 1000) * (sim.cpm || 0)).toLocaleString()}
+- Reach Cost (to acquire ${(sim.audience_size || 0).toLocaleString()} impressions): $${Math.round(((sim.audience_size || 0) / 1000) * (sim.cpm || 0)).toLocaleString()}
 - Creator Fee: $${(sim.creator_fee || 0).toLocaleString()}
-- Total Required Spend: $${(Math.round((sim.audience_size / 1000) * (sim.cpm || 0)) + (sim.creator_fee || 0)).toLocaleString()}
+- Total Required Spend: $${(Math.round(((sim.audience_size || 0) / 1000) * (sim.cpm || 0)) + (sim.creator_fee || 0)).toLocaleString()}
 - Target CPA: $${(b.cpa || 0).toFixed(2)}
 - Target CPC: $${(b.cpc || 0).toFixed(2)}
 
 6. SCENARIO ANALYSIS
-${b.scenario === 'A' ? `
+${b.scenario ? (b.scenario === 'A' ? `
 SCENARIO A: Creator Fee Exceeds Gap
 - The creator fee ($${(sim.creator_fee || 0).toLocaleString()}) is greater than the remaining budget after reach costs.
 - Recommendation: Focus on high-intent targeting and creative optimization to lower CPC/CPA.
@@ -129,11 +129,11 @@ SCENARIO B: Creator Fee Within Budget
 - The creator fee ($${(sim.creator_fee || 0).toLocaleString()}) is covered by the budget.
 - Frequency/Contingency Gap: $${Math.round(b.gap || 0).toLocaleString()}
 - Recommendation: Use the extra budget for retargeting or creative testing.
-`}
+`) : 'No scenario analysis available for legacy data.'}
 
-${b.cpa > sim.product_price ? `
+${(b.cpa || 0) > (sim.product_price || 0) ? `
 !!! SANITY CHECK WARNING !!!
-Target CPA ($${b.cpa.toFixed(2)}) exceeds Product Price ($${sim.product_price}).
+Target CPA ($${(b.cpa || 0).toFixed(2)}) exceeds Product Price ($${sim.product_price || 0}).
 This campaign may lose money on a single-sale basis.
 ` : ''}
 
@@ -248,11 +248,17 @@ Use these findings to negotiate creator rates and optimize your ad creative.
     try {
       const budgets = activeSim.calculated_budgets ? JSON.parse(activeSim.calculated_budgets) : [];
       const selectedBudget = budgetObj || budgets[1] || budgets[0];
+      
+      if (!selectedBudget) {
+        setAdGuide("No budget information found for this simulation. Please run a new simulation to generate a guide with the latest financial modeling.");
+        return;
+      }
+
       const guide = await generateAdGuide(activeSim, personas, selectedBudget.target, selectedBudget);
       setAdGuide(guide || "Failed to generate guide.");
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to generate ad guide", err);
-      setAdGuide("An error occurred while generating your guide.");
+      setAdGuide(`An error occurred: ${err.message || "Unknown error"}. Try running a new simulation.`);
     } finally {
       setIsGeneratingGuide(false);
     }
@@ -389,11 +395,16 @@ Use these findings to negotiate creator rates and optimize your ad creative.
       };
 
       // 4. Save to DB
-      await fetch('/api/simulations', {
+      const saveRes = await fetch('/api/simulations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newSim)
       });
+
+      if (!saveRes.ok) {
+        const errorData = await saveRes.json();
+        throw new Error(errorData.error || "Failed to save simulation to database.");
+      }
 
       setActiveSim(newSim);
       setSimulations([newSim, ...simulations]);
@@ -600,6 +611,20 @@ Use these findings to negotiate creator rates and optimize your ad creative.
                         value={formData.cpm} 
                         onChange={v => setFormData({...formData, cpm: Number(v)})} 
                       />
+                      <div className="relative group">
+                        <InputField 
+                          label="Conv. Rate (%)" 
+                          type="number" 
+                          value={formData.conversion_rate * 100} 
+                          onChange={v => setFormData({...formData, conversion_rate: Number(v) / 100})} 
+                        />
+                        <div className="absolute -top-1 -right-1">
+                          <HelpCircle size={12} className="text-black/20 cursor-help" />
+                          <div className="absolute hidden group-hover:block bg-black text-white text-[10px] p-2 rounded-lg w-32 z-50 -right-2 top-4 shadow-xl">
+                            Leave at 0 to let AI estimate based on niche.
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   </div>
                   
@@ -772,6 +797,27 @@ Use these findings to negotiate creator rates and optimize your ad creative.
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 lg:gap-8">
                   {(() => {
                     const budgets = activeSim.calculated_budgets ? JSON.parse(activeSim.calculated_budgets) : [];
+                    if (budgets.length === 0) {
+                      // Fallback for old simulations
+                      return [
+                        { tier: "Low Risk", price: activeSim.predicted_low_price, target: 5, color: "emerald" },
+                        { tier: "Balanced", price: activeSim.predicted_med_price, target: 3, color: "indigo" },
+                        { tier: "High Stakes", price: activeSim.predicted_high_price, target: 1.5, color: "orange" }
+                      ].map((b: any, i: number) => (
+                        <PriceCard 
+                          key={i}
+                          tier={b.tier} 
+                          price={b.price} 
+                          probability={`${b.target}x`} 
+                          description="Legacy simulation data. Run a new simulation for detailed media buying scenarios."
+                          color={b.color}
+                          isExpanded={expandedPriceCard === `tier-${i}`}
+                          onToggle={() => setExpandedPriceCard(expandedPriceCard === `tier-${i}` ? null : `tier-${i}`)}
+                          onDownload={(e) => { e.stopPropagation(); downloadCalculationFlow(activeSim, b.target, b.price); }}
+                          onGenerateGuide={(e) => { e.stopPropagation(); handleGenerateGuide({ target: b.target, budget: b.price }); }}
+                        />
+                      ));
+                    }
                     return budgets.map((b: any, i: number) => (
                       <PriceCard 
                         key={i}

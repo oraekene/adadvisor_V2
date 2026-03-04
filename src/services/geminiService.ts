@@ -53,11 +53,25 @@ export async function estimateBenchmarks(creatorData: any, businessData: any) {
 }
 
 export async function generateAdGuide(simulation: any, personas: Persona[], targetROAS: number, budgetInfo: any) {
-  const estimatedClicks = Math.round(simulation.audience_size * (simulation.discovered_click_rate || 0));
-  const estimatedSales = Math.round(simulation.audience_size * (simulation.discovered_conversion_rate || 0));
-  const estimatedRevenue = estimatedSales * simulation.product_price;
+  const audienceSize = simulation.audience_size || 0;
+  const clickRate = simulation.discovered_click_rate || 0;
+  const convRate = simulation.discovered_conversion_rate || 0;
+  const productPrice = simulation.product_price || 0;
+
+  const estimatedClicks = Math.round(audienceSize * clickRate);
+  const estimatedSales = Math.round(audienceSize * convRate);
+  const estimatedRevenue = estimatedSales * productPrice;
   
-  const { budget, scenario, reachCost, creatorFee, gap, cpa, cpc, cpm } = budgetInfo;
+  const { 
+    budget = 0, 
+    scenario = 'B', 
+    reachCost = 0, 
+    creatorFee = 0, 
+    gap = 0, 
+    cpa = 0, 
+    cpc = 0, 
+    cpm = 0 
+  } = budgetInfo || {};
 
   const response = await ai.models.generateContent({
     model: "gemini-3-flash-preview",
@@ -68,29 +82,29 @@ export async function generateAdGuide(simulation: any, personas: Persona[], targ
     Product Description: ${simulation.product_description}
     Unique Selling Points (USPs): ${simulation.usp}
     Campaign Goal: ${simulation.campaign_goal}
-    Product Price: $${simulation.product_price}
+    Product Price: $${productPrice}
     
     TARGETING:
     Target Creator: ${simulation.creator_name}
     Target Audience: ${simulation.demographics}
-    Audience Size: ${simulation.audience_size.toLocaleString()}
+    Audience Size: ${audienceSize.toLocaleString()}
     
     SIMULATION DISCOVERY DATA:
-    - Discovered Click Rate: ${((simulation.discovered_click_rate || 0) * 100).toFixed(4)}%
-    - Discovered Conversion Rate: ${((simulation.discovered_conversion_rate || 0) * 100).toFixed(4)}%
+    - Discovered Click Rate: ${(clickRate * 100).toFixed(4)}%
+    - Discovered Conversion Rate: ${(convRate * 100).toFixed(4)}%
     - Estimated Clicks: ${estimatedClicks.toLocaleString()}
     - Estimated Sales: ${estimatedSales.toLocaleString()}
     - Estimated Revenue: $${estimatedRevenue.toLocaleString()}
     
-    BUDGET CONTEXT (Target ${targetROAS}x ROAS):
-    - Total Budget: $${budget.toLocaleString()}
+    BUDGET CONTEXT (Target ${targetROAS || 3}x ROAS):
+    - Total Budget: $${(budget || 0).toLocaleString()}
     - Scenario: ${scenario === 'A' ? 'Creator Fee > Gap (ROAS will be lower than target)' : 'Creator Fee < Gap (Budget includes extra for frequency/contingency)'}
-    - Creator Fee: $${creatorFee.toLocaleString()}
-    - Paid Media Reach Cost (Deterministic): $${reachCost.toLocaleString()}
-    - Gap/Extra: $${Math.abs(gap).toLocaleString()}
-    - Effective CPC: $${cpc.toFixed(2)}
-    - Effective CPM: $${cpm.toFixed(2)}
-    - Effective CPA: $${cpa.toFixed(2)}
+    - Creator Fee: $${(creatorFee || 0).toLocaleString()}
+    - Paid Media Reach Cost (Deterministic): $${(reachCost || 0).toLocaleString()}
+    - Gap/Extra: $${Math.abs(gap || 0).toLocaleString()}
+    - Effective CPC: $${(cpc || 0).toFixed(2)}
+    - Effective CPM: $${(cpm || 0).toFixed(2)}
+    - Effective CPA: $${(cpa || 0).toFixed(2)}
     
     AUDIENCE PSYCHOGRAPHICS:
     Top Personas: ${personas.map((p: any) => `${p.vals_segment} (${p.decision_style} style)`).join(', ')}
@@ -99,14 +113,14 @@ export async function generateAdGuide(simulation: any, personas: Persona[], targ
     1. The "Big Hook": 3 specific opening lines tailored to the dominant VALS segments.
     2. Creative Direction: Detailed visual storyboard for a 30-60 second video.
     3. Messaging Strategy: How to weave the USPs into the creator's natural content style.
-    4. Pricing Presentation: How to anchor the $${simulation.product_price} price point.
+    4. Pricing Presentation: How to anchor the $${productPrice} price point.
     5. Call to Action: A specific, trackable CTA.
     6. Media Buying Advice: 
-       - Provide a deterministic breakdown of the $${budget.toLocaleString()} budget.
+       - Provide a deterministic breakdown of the $${(budget || 0).toLocaleString()} budget.
        - Include a "Platform Input" section showing exactly what to enter into TikTok/Meta Ads Manager (e.g., Daily Budget, Bid Cap, Optimization Goal).
        - Provide a 30-day spend schedule (Day 1-7: Testing, Day 8-30: Scaling).
-       - Explain how to use the Effective CPC ($${cpc.toFixed(2)}) as a benchmark for pausing underperforming creative.
-       - Address the specific Scenario (${scenario}): ${scenario === 'A' ? 'Explain that the creator fee is high relative to the audience reach, so the paid media spend is lean and must be highly targeted.' : 'Explain how to use the extra $'+gap.toLocaleString()+' for increased frequency or contingency.'}
+       - Explain how to use the Effective CPC ($${(cpc || 0).toFixed(2)}) as a benchmark for pausing underperforming creative.
+       - Address the specific Scenario (${scenario}): ${scenario === 'A' ? 'Explain that the creator fee is high relative to the audience reach, so the paid media spend is lean and must be highly targeted.' : 'Explain how to use the extra $'+(gap || 0).toLocaleString()+' for increased frequency or contingency.'}
     
     IMPORTANT: Do NOT hallucinate unrelated products. Focus strictly on ${simulation.business_name} and its description: ${simulation.product_description}.`,
     config: {

@@ -55,6 +55,17 @@ async function startServer() {
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
       `);
+      
+      // Ensure new columns exist if table was created earlier
+      const columns = ['creator_fee', 'cpm', 'custom_roas_targets', 'calculated_budgets'];
+      for (const col of columns) {
+        try {
+          db.exec(`ALTER TABLE simulations ADD COLUMN ${col} ${col.includes('targets') || col.includes('budgets') ? 'TEXT' : 'REAL'}`);
+        } catch (e) {
+          // Ignore error if column already exists
+        }
+      }
+      
       console.log("SQLite initialized.");
     } catch (err) {
       console.error("Failed to initialize SQLite:", err);
@@ -116,7 +127,7 @@ async function startServer() {
             discovered_click_rate, discovered_conversion_rate,
             raw_simulation_log, ad_guide, ad_guides,
             creator_fee, cpm, custom_roas_targets, calculated_budgets
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
 
         stmt.run(
@@ -132,7 +143,7 @@ async function startServer() {
       }
       res.status(500).json({ error: "No database available" });
     } catch (err: any) {
-      console.error("Failed to save simulation:", err);
+      console.error("Failed to save simulation:", err.message || err);
       res.status(500).json({ error: err.message });
     }
   });
