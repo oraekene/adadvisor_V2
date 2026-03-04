@@ -42,6 +42,11 @@ if (!supabase) {
         actual_revenue REAL,
         raw_simulation_log TEXT,
         ad_guide TEXT,
+        ad_guides TEXT,
+        creator_fee REAL,
+        cpm REAL,
+        custom_roas_targets TEXT,
+        calculated_budgets TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
       )
     `);
@@ -88,7 +93,8 @@ app.post("/api/simulations", async (req, res) => {
         creator_name, audience_size, demographics, engagement_rate,
         predicted_low_price, predicted_med_price, predicted_high_price,
         discovered_click_rate, discovered_conversion_rate,
-        raw_simulation_log, ad_guide
+        raw_simulation_log, ad_guide, ad_guides,
+        creator_fee, cpm, custom_roas_targets, calculated_budgets
       } = req.body;
 
       const stmt = db.prepare(`
@@ -98,8 +104,9 @@ app.post("/api/simulations", async (req, res) => {
           creator_name, audience_size, demographics, engagement_rate,
           predicted_low_price, predicted_med_price, predicted_high_price,
           discovered_click_rate, discovered_conversion_rate,
-          raw_simulation_log, ad_guide
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          raw_simulation_log, ad_guide, ad_guides,
+          creator_fee, cpm, custom_roas_targets, calculated_budgets
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
       stmt.run(
@@ -108,7 +115,8 @@ app.post("/api/simulations", async (req, res) => {
         creator_name, audience_size, demographics, engagement_rate,
         predicted_low_price, predicted_med_price, predicted_high_price,
         discovered_click_rate, discovered_conversion_rate,
-        raw_simulation_log, ad_guide
+        raw_simulation_log, ad_guide, ad_guides,
+        creator_fee, cpm, custom_roas_targets, calculated_budgets
       );
 
       return res.json({ success: true });

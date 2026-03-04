@@ -11,6 +11,10 @@ export interface Simulation {
   audience_size: number;
   demographics: string;
   engagement_rate: number;
+  creator_fee?: number;
+  cpm?: number;
+  custom_roas_targets?: string; // JSON string of number[]
+  calculated_budgets?: string; // JSON string of { target: number, budget: number, scenario: 'A' | 'B', reachCost: number, creatorFee: number, gap: number }[]
   predicted_low_price: number;
   predicted_med_price: number;
   predicted_high_price: number;
@@ -20,6 +24,7 @@ export interface Simulation {
   actual_revenue?: number;
   raw_simulation_log?: string;
   ad_guide?: string;
+  ad_guides?: string; // JSON string of { target: number, content: string }[]
   created_at: string;
 }
 

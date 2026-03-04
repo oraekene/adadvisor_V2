@@ -55,7 +55,10 @@ export default function App() {
     creator_name: 'Mr Beast',
     audience_size: 100000000,
     demographics: 'Gen Z, Gaming, Entertainment',
-    engagement_rate: 0.05
+    engagement_rate: 0.05,
+    creator_fee: 0, // 0 means AI will estimate
+    cpm: 0, // 0 means AI will estimate
+    custom_roas_targets: [1.5, 3.0, 5.0] as number[]
   });
 
   useEffect(() => {
@@ -78,6 +81,8 @@ export default function App() {
   };
 
   const downloadCalculationFlow = (sim: Simulation, targetROAS: number, budget: number) => {
+    const budgets = sim.calculated_budgets ? JSON.parse(sim.calculated_budgets) : [];
+    const b = budgets.find((x: any) => x.target === targetROAS) || {};
     const flow = `
 CALCULATION FLOW: ${sim.business_name} x ${sim.creator_name}
 Target ROAS: ${targetROAS}x
@@ -88,6 +93,8 @@ Target ROAS: ${targetROAS}x
 - Product Price: $${sim.product_price}
 - Engagement Rate (Guess): ${(sim.engagement_rate * 100).toFixed(2)}%
 - Conversion Rate (Guess): ${(sim.conversion_rate * 100).toFixed(2)}%
+- Creator Fee: $${(sim.creator_fee || 0).toLocaleString()}
+- CPM: $${(sim.cpm || 0).toFixed(2)}
 
 2. SIMULATION DISCOVERY (Monte Carlo Results)
 - Discovered Click Rate: ${((sim.discovered_click_rate || 0) * 100).toFixed(4)}%
@@ -104,6 +111,31 @@ Target ROAS: ${targetROAS}x
 - Formula: Total Estimated Revenue / Target ROAS
 - Calculation: $${Math.round(sim.audience_size * (sim.discovered_conversion_rate || 0) * sim.product_price).toLocaleString()} / ${targetROAS}
 - Suggested Budget: $${Math.ceil(budget).toLocaleString()}
+
+5. DETERMINISTIC MEDIA BUYING BRIDGE
+- Reach Cost (to acquire ${sim.audience_size.toLocaleString()} impressions): $${Math.round((sim.audience_size / 1000) * (sim.cpm || 0)).toLocaleString()}
+- Creator Fee: $${(sim.creator_fee || 0).toLocaleString()}
+- Total Required Spend: $${(Math.round((sim.audience_size / 1000) * (sim.cpm || 0)) + (sim.creator_fee || 0)).toLocaleString()}
+- Target CPA: $${(b.cpa || 0).toFixed(2)}
+- Target CPC: $${(b.cpc || 0).toFixed(2)}
+
+6. SCENARIO ANALYSIS
+${b.scenario === 'A' ? `
+SCENARIO A: Creator Fee Exceeds Gap
+- The creator fee ($${(sim.creator_fee || 0).toLocaleString()}) is greater than the remaining budget after reach costs.
+- Recommendation: Focus on high-intent targeting and creative optimization to lower CPC/CPA.
+` : `
+SCENARIO B: Creator Fee Within Budget
+- The creator fee ($${(sim.creator_fee || 0).toLocaleString()}) is covered by the budget.
+- Frequency/Contingency Gap: $${Math.round(b.gap || 0).toLocaleString()}
+- Recommendation: Use the extra budget for retargeting or creative testing.
+`}
+
+${b.cpa > sim.product_price ? `
+!!! SANITY CHECK WARNING !!!
+Target CPA ($${b.cpa.toFixed(2)}) exceeds Product Price ($${sim.product_price}).
+This campaign may lose money on a single-sale basis.
+` : ''}
 
 --------------------------------------------------
 This budget represents the maximum combined spend (creator fee + ad spend) 
@@ -129,6 +161,7 @@ to maintain a ${targetROAS}x ROAS based on the simulated audience behavior.
   };
 
   const downloadFullReport = (sim: Simulation) => {
+    const budgets = sim.calculated_budgets ? JSON.parse(sim.calculated_budgets) : [];
     const report = `
 ATTRIBUTION AI - FULL SIMULATION REPORT
 Generated: ${new Date(sim.created_at).toLocaleString()}
@@ -141,6 +174,8 @@ USPs: ${sim.usp}
 Campaign Goal: ${sim.campaign_goal}
 Product Price: $${sim.product_price}
 Margin: ${sim.margin * 100}%
+Creator Fee: $${(sim.creator_fee || 0).toLocaleString()}
+CPM: $${(sim.cpm || 0).toFixed(2)}
 
 CAMPAIGN TARGETING
 Creator: ${sim.creator_name}
@@ -148,13 +183,18 @@ Audience Size: ${sim.audience_size.toLocaleString()}
 Demographics: ${sim.demographics}
 
 DISCOVERED PERFORMANCE (Simulated)
-Discovered Click Rate: ${(sim.discovered_click_rate || 0 * 100).toFixed(2)}%
-Discovered Conversion Rate: ${(sim.discovered_conversion_rate || 0 * 100).toFixed(2)}%
+Discovered Click Rate: ${((sim.discovered_click_rate || 0) * 100).toFixed(4)}%
+Discovered Conversion Rate: ${((sim.discovered_conversion_rate || 0) * 100).toFixed(4)}%
 
 BID RECOMMENDATIONS (Total Campaign Budget)
-- Low Risk (5x ROAS): $${sim.predicted_low_price.toLocaleString()}
-- Balanced (3x ROAS): $${sim.predicted_med_price.toLocaleString()}
-- High Stakes (1.5x ROAS): $${sim.predicted_high_price.toLocaleString()}
+${budgets.map((b: any) => `
+- Target ROAS: ${b.target}x
+  Suggested Total Budget: $${Math.ceil(b.budget).toLocaleString()}
+  Target CPA: $${b.cpa.toFixed(2)}
+  Target CPC: $${b.cpc.toFixed(2)}
+  Scenario: ${b.scenario === 'A' ? 'A (Creator Fee Priority)' : 'B (ROAS Met + Contingency)'}
+  ${b.cpa > sim.product_price ? '!!! WARNING: CPA EXCEEDS PRODUCT PRICE !!!' : ''}
+`).join('\n')}
 
 PSYCHOGRAPHIC AGENT PROFILES
 The simulation generated ${personas.length} unique audience archetypes.
@@ -201,12 +241,14 @@ Use these findings to negotiate creator rates and optimize your ad creative.
     }
   };
 
-  const handleGenerateGuide = async () => {
+  const handleGenerateGuide = async (budgetObj?: any) => {
     if (!activeSim) return;
     setIsGeneratingGuide(true);
     setShowGuideModal(true);
     try {
-      const guide = await generateAdGuide(activeSim, personas);
+      const budgets = activeSim.calculated_budgets ? JSON.parse(activeSim.calculated_budgets) : [];
+      const selectedBudget = budgetObj || budgets[1] || budgets[0];
+      const guide = await generateAdGuide(activeSim, personas, selectedBudget.target, selectedBudget);
       setAdGuide(guide || "Failed to generate guide.");
     } catch (err) {
       console.error("Failed to generate ad guide", err);
@@ -226,7 +268,7 @@ Use these findings to negotiate creator rates and optimize your ad creative.
       let currentFormData = { ...formData };
       
       // 0. Auto-estimate benchmarks if needed
-      if (formData.conversion_rate === 0 || formData.engagement_rate === 0) {
+      if (formData.conversion_rate === 0 || formData.engagement_rate === 0 || formData.cpm === 0) {
         setIsEstimating(true);
         const benchmarks = await estimateBenchmarks(
           { creator_name: formData.creator_name, demographics: formData.demographics },
@@ -234,8 +276,9 @@ Use these findings to negotiate creator rates and optimize your ad creative.
         );
         currentFormData = {
           ...formData,
-          conversion_rate: benchmarks.conversion_rate,
-          engagement_rate: benchmarks.engagement_rate
+          conversion_rate: formData.conversion_rate || benchmarks.conversion_rate,
+          engagement_rate: formData.engagement_rate || benchmarks.engagement_rate,
+          cpm: formData.cpm || benchmarks.average_cpm || 15 // Default to $15 if AI fails
         };
         setFormData(currentFormData);
         setIsEstimating(false);
@@ -257,11 +300,7 @@ Use these findings to negotiate creator rates and optimize your ad creative.
       const results = [];
       for (let i = 0; i < generatedPersonas.length; i++) {
         const persona = generatedPersonas[i];
-        
-        // Code-based precision calculation
         const decision = calculateDecision(persona, currentFormData.product_price, currentFormData.engagement_rate);
-        
-        // AI-based qualitative reasoning
         const aiReasoning = await simulateDecision(persona, `Ad for ${currentFormData.business_name} on ${currentFormData.creator_name}'s channel`);
         
         const finalResult = {
@@ -279,45 +318,70 @@ Use these findings to negotiate creator rates and optimize your ad creative.
         setSimulationProgress(prev => prev + (60 / generatedPersonas.length));
       }
 
-      // 3. Monte Carlo Scaling (Simulate 10,000 agents based on archetypes)
+      // 3. Monte Carlo Scaling
       const monteCarloCount = 10000;
       const monteCarloLog: string[] = ["AgentID,ArchetypeID,VALS,DecisionStyle,Clicked,Bought,Score"];
       let mcBought = 0;
       let mcClicked = 0;
 
       for (let i = 0; i < monteCarloCount; i++) {
-        // Pick a random archetype
         const archetypeIndex = Math.floor(Math.random() * generatedPersonas.length);
         const archetype = generatedPersonas[archetypeIndex];
-        
-        // Re-calculate for each agent to introduce stochastic variance
         const result = calculateDecision(archetype, currentFormData.product_price, currentFormData.engagement_rate);
-
         if (result.bought) mcBought++;
         if (result.clicked) mcClicked++;
-
-        // We log all entries to allow full verification of the 10,000+ audience.
         monteCarloLog.push(`${i},${archetype.id},${archetype.vals_segment},${archetype.decision_style},${result.clicked},${result.bought},${result.score.toFixed(4)}`);
       }
 
       const buyRate = mcBought / monteCarloCount;
       const clickRate = mcClicked / monteCarloCount;
       
-      // The simulation "discovers" the real rates by observing the agents
-      // We use the discovered clickRate and buyRate to project across the full audience
-      const estimatedClicks = currentFormData.audience_size * clickRate;
       const estimatedSales = currentFormData.audience_size * buyRate;
       const estimatedRevenue = estimatedSales * currentFormData.product_price;
-      const estimatedProfit = (estimatedRevenue * currentFormData.margin);
+
+      // Deterministic Reach Cost Calculation
+      const reachCost = (currentFormData.audience_size / 1000) * (currentFormData.cpm || 15);
+      const creatorFee = currentFormData.creator_fee || (estimatedRevenue * 0.1); // Estimate 10% of revenue if not provided
+
+      // Calculate Budgets for each Custom ROAS Target
+      const calculatedBudgets = currentFormData.custom_roas_targets.map(target => {
+        const targetBudget = estimatedRevenue / target;
+        const gap = targetBudget - reachCost;
+        
+        let finalBudget: number;
+        let scenario: 'A' | 'B';
+        
+        if (creatorFee > gap) {
+          // Scenario A: Creator fee takes precedence
+          finalBudget = creatorFee + reachCost;
+          scenario = 'A';
+        } else {
+          // Scenario B: Creator fee is less than gap
+          finalBudget = targetBudget;
+          scenario = 'B';
+        }
+
+        return {
+          target,
+          budget: Math.ceil(finalBudget),
+          scenario,
+          reachCost,
+          creatorFee,
+          gap: targetBudget - reachCost - creatorFee,
+          cpa: finalBudget / estimatedSales,
+          cpc: finalBudget / (currentFormData.audience_size * clickRate),
+          cpm: (finalBudget / currentFormData.audience_size) * 1000
+        };
+      });
 
       const newSim: Simulation = {
         id: Math.random().toString(36).substr(2, 9),
         ...currentFormData,
-        // Suggested bid prices based on discovered ROI
-        // Low price: 5x ROAS, Med: 3x ROAS, High: 1.5x ROAS
-        predicted_low_price: Math.ceil(estimatedRevenue / 5),
-        predicted_med_price: Math.ceil(estimatedRevenue / 3),
-        predicted_high_price: Math.ceil(estimatedRevenue / 1.5),
+        custom_roas_targets: JSON.stringify(currentFormData.custom_roas_targets),
+        calculated_budgets: JSON.stringify(calculatedBudgets),
+        predicted_low_price: calculatedBudgets[0]?.budget || 0,
+        predicted_med_price: calculatedBudgets[1]?.budget || 0,
+        predicted_high_price: calculatedBudgets[2]?.budget || 0,
         discovered_click_rate: clickRate,
         discovered_conversion_rate: buyRate,
         raw_simulation_log: monteCarloLog.join("\n"),
@@ -511,7 +575,7 @@ Use these findings to negotiate creator rates and optimize your ad creative.
                         AI Estimate Benchmarks
                       </button>
                     </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <InputField 
                         label="Product Price ($)" 
                         type="number" 
@@ -524,20 +588,58 @@ Use these findings to negotiate creator rates and optimize your ad creative.
                         value={formData.margin * 100} 
                         onChange={v => setFormData({...formData, margin: Number(v) / 100})} 
                       />
-                      <div className="relative group">
-                        <InputField 
-                          label="Conv. Rate (%)" 
-                          type="number" 
-                          value={formData.conversion_rate * 100} 
-                          onChange={v => setFormData({...formData, conversion_rate: Number(v) / 100})} 
-                        />
-                        <div className="absolute -top-1 -right-1">
-                          <HelpCircle size={12} className="text-black/20 cursor-help" />
-                          <div className="absolute hidden group-hover:block bg-black text-white text-[10px] p-2 rounded-lg w-32 z-50 -right-2 top-4 shadow-xl">
-                            Leave at 0 to let AI estimate based on niche.
-                          </div>
+                      <InputField 
+                        label="Creator Fee ($) (Opt.)" 
+                        type="number" 
+                        value={formData.creator_fee} 
+                        onChange={v => setFormData({...formData, creator_fee: Number(v)})} 
+                      />
+                      <InputField 
+                        label="CPM ($) (Opt.)" 
+                        type="number" 
+                        value={formData.cpm} 
+                        onChange={v => setFormData({...formData, cpm: Number(v)})} 
+                      />
+                    </div>
+                  </div>
+                  
+                  <div className="space-y-4">
+                    <h3 className="text-sm font-bold uppercase tracking-widest text-black/40">Target ROAS Multiples (Max 4)</h3>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                      {formData.custom_roas_targets.map((target, i) => (
+                        <div key={i} className="relative group">
+                          <InputField 
+                            label={`Target ${i+1}`} 
+                            type="number" 
+                            value={target} 
+                            onChange={v => {
+                              const newTargets = [...formData.custom_roas_targets];
+                              newTargets[i] = Number(v);
+                              setFormData({...formData, custom_roas_targets: newTargets});
+                            }} 
+                          />
+                          {formData.custom_roas_targets.length > 1 && (
+                            <button 
+                              onClick={() => {
+                                const newTargets = formData.custom_roas_targets.filter((_, idx) => idx !== i);
+                                setFormData({...formData, custom_roas_targets: newTargets});
+                              }}
+                              className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                            >
+                              <X size={10} />
+                            </button>
+                          )}
                         </div>
-                      </div>
+                      ))}
+                      {formData.custom_roas_targets.length < 4 && (
+                        <button 
+                          onClick={() => setFormData({...formData, custom_roas_targets: [...formData.custom_roas_targets, 2.0]})}
+                          className="flex flex-col items-center justify-center border-2 border-dashed border-black/10 rounded-2xl p-4 hover:border-black/20 transition-all group"
+                        >
+                          <Plus size={20} className="text-black/20 group-hover:text-black/40" />
+                          <span className="text-[10px] font-bold uppercase tracking-widest text-black/20 group-hover:text-black/40">Add Target</span>
+                        </button>
+                      )}
                     </div>
                   </div>
 
@@ -667,40 +769,28 @@ Use these findings to negotiate creator rates and optimize your ad creative.
               )}
 
               {!loading && (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 lg:gap-8">
-                  <PriceCard 
-                    tier="Low Risk" 
-                    price={activeSim.predicted_low_price} 
-                    cac={activeSim.predicted_low_price / (activeSim.audience_size * (activeSim.discovered_conversion_rate || 0))}
-                    probability="95%" 
-                    description="Almost guaranteed positive ROI. Safe bet for initial testing."
-                    color="emerald"
-                    isExpanded={expandedPriceCard === 'low'}
-                    onToggle={() => setExpandedPriceCard(expandedPriceCard === 'low' ? null : 'low')}
-                    onDownload={(e) => { e.stopPropagation(); downloadCalculationFlow(activeSim, 5, activeSim.predicted_low_price); }}
-                  />
-                  <PriceCard 
-                    tier="Balanced" 
-                    price={activeSim.predicted_med_price} 
-                    cac={activeSim.predicted_med_price / (activeSim.audience_size * (activeSim.discovered_conversion_rate || 0))}
-                    probability="70%" 
-                    description="Strong chance of breaking even or better. Recommended bid."
-                    color="indigo"
-                    isExpanded={expandedPriceCard === 'med'}
-                    onToggle={() => setExpandedPriceCard(expandedPriceCard === 'med' ? null : 'med')}
-                    onDownload={(e) => { e.stopPropagation(); downloadCalculationFlow(activeSim, 3, activeSim.predicted_med_price); }}
-                  />
-                  <PriceCard 
-                    tier="High Stakes" 
-                    price={activeSim.predicted_high_price} 
-                    cac={activeSim.predicted_high_price / (activeSim.audience_size * (activeSim.discovered_conversion_rate || 0))}
-                    probability="50%" 
-                    description="Flipping a coin. High upside if audience hits perfectly."
-                    color="orange"
-                    isExpanded={expandedPriceCard === 'high'}
-                    onToggle={() => setExpandedPriceCard(expandedPriceCard === 'high' ? null : 'high')}
-                    onDownload={(e) => { e.stopPropagation(); downloadCalculationFlow(activeSim, 1.5, activeSim.predicted_high_price); }}
-                  />
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 lg:gap-8">
+                  {(() => {
+                    const budgets = activeSim.calculated_budgets ? JSON.parse(activeSim.calculated_budgets) : [];
+                    return budgets.map((b: any, i: number) => (
+                      <PriceCard 
+                        key={i}
+                        tier={i === 0 ? "Low Risk" : i === 1 ? "Balanced" : i === 2 ? "High Stakes" : "Aggressive"} 
+                        price={b.budget} 
+                        cac={b.cpa}
+                        productPrice={activeSim.product_price}
+                        scenario={b.scenario}
+                        gap={b.gap}
+                        probability={`${b.target}x`} 
+                        description={b.scenario === 'A' ? "Creator fee is high. Focus on high-intent targeting." : "Optimal balance. Extra budget used for frequency."}
+                        color={i === 0 ? "emerald" : i === 1 ? "indigo" : i === 2 ? "orange" : "orange"}
+                        isExpanded={expandedPriceCard === `tier-${i}`}
+                        onToggle={() => setExpandedPriceCard(expandedPriceCard === `tier-${i}` ? null : `tier-${i}`)}
+                        onDownload={(e) => { e.stopPropagation(); downloadCalculationFlow(activeSim, b.target, b.budget); }}
+                        onGenerateGuide={(e) => { e.stopPropagation(); handleGenerateGuide(b); }}
+                      />
+                    ));
+                  })()}
                 </div>
               )}
 
@@ -1011,12 +1101,14 @@ function InputField({ label, value, onChange, type = 'text' }: { label: string; 
   );
 }
 
-function PriceCard({ tier, price, probability, description, color, isExpanded, onToggle, onDownload, cac }: { tier: string; price: number; probability: string; description: string; color: 'emerald' | 'indigo' | 'orange'; isExpanded?: boolean; onToggle?: () => void; onDownload?: (e: React.MouseEvent) => void; cac?: number }) {
+function PriceCard({ tier, price, probability, description, color, isExpanded, onToggle, onDownload, onGenerateGuide, cac, productPrice, scenario, gap }: { tier: string; price: number; probability: string; description: string; color: 'emerald' | 'indigo' | 'orange'; isExpanded?: boolean; onToggle?: () => void; onDownload?: (e: React.MouseEvent) => void; onGenerateGuide?: (e: React.MouseEvent) => void; cac?: number; productPrice?: number; scenario?: 'A' | 'B'; gap?: number }) {
   const colors = {
     emerald: 'bg-emerald-50 text-emerald-700 border-emerald-100',
     indigo: 'bg-indigo-50 text-indigo-700 border-indigo-100',
     orange: 'bg-orange-50 text-orange-700 border-orange-100'
   };
+
+  const isUnsafe = cac && productPrice && cac > productPrice;
 
   return (
     <div 
@@ -1027,7 +1119,7 @@ function PriceCard({ tier, price, probability, description, color, isExpanded, o
       onClick={onToggle}
     >
       <div className={cn("absolute top-0 right-0 px-4 py-1 rounded-bl-2xl text-[10px] font-black uppercase tracking-widest", colors[color])}>
-        {tier === 'Low Risk' ? '5x' : tier === 'Balanced' ? '3x' : '1.5x'} Target ROAS
+        {probability} Target ROAS
       </div>
       <div className="flex items-center justify-between mb-2">
         <div className="text-xs sm:text-sm font-bold text-black/40 uppercase tracking-widest">{tier}</div>
@@ -1038,11 +1130,39 @@ function PriceCard({ tier, price, probability, description, color, isExpanded, o
         ${Math.ceil(price).toLocaleString()}
       </div>
       {cac !== undefined && (
-        <div className="flex items-center gap-1.5 mb-4">
+        <div className="flex items-center gap-1.5 mb-2">
           <div className="text-[10px] font-bold text-black/40 uppercase tracking-widest">Target CAC:</div>
-          <div className="text-sm font-bold text-emerald-600">${cac.toFixed(2)}</div>
+          <div className={cn("text-sm font-bold", isUnsafe ? "text-red-600" : "text-emerald-600")}>${cac.toFixed(2)}</div>
         </div>
       )}
+
+      {isUnsafe && (
+        <div className="mb-4 p-3 bg-red-50 border-red-100 rounded-xl flex items-start gap-2 text-red-700">
+          <AlertCircle size={14} className="shrink-0 mt-0.5" />
+          <div className="text-[9px] font-bold leading-tight uppercase tracking-wider">
+            Warning: Target CAC exceeds product price. This campaign may lose money on a single-sale basis.
+          </div>
+        </div>
+      )}
+
+      {scenario === 'A' && (
+        <div className="mb-4 p-3 bg-orange-50 border-orange-100 rounded-xl flex items-start gap-2 text-orange-700">
+          <Info size={14} className="shrink-0 mt-0.5" />
+          <div className="text-[9px] font-bold leading-tight uppercase tracking-wider">
+            Scenario A: Creator fee takes precedence. Paid media budget is lean.
+          </div>
+        </div>
+      )}
+
+      {scenario === 'B' && (
+        <div className="mb-4 p-3 bg-blue-50 border-blue-100 rounded-xl flex items-start gap-2 text-blue-700">
+          <Info size={14} className="shrink-0 mt-0.5" />
+          <div className="text-[9px] font-bold leading-tight uppercase tracking-wider">
+            Scenario B: Target ROAS met with extra ${Math.round(gap || 0).toLocaleString()} for frequency/contingency.
+          </div>
+        </div>
+      )}
+
       <p className="text-xs sm:text-sm text-black/60 leading-relaxed mb-6">
         {description}
       </p>
@@ -1058,20 +1178,29 @@ function PriceCard({ tier, price, probability, description, color, isExpanded, o
             <div className="p-4 rounded-2xl bg-black/[0.02] space-y-2">
               <div className="text-[10px] font-black uppercase text-black/40">What this means:</div>
               <p className="text-xs text-black/60 leading-relaxed">
-                This is the **maximum** you should spend on this creator partnership (including their fee and any supporting ad spend) to achieve a **{tier === 'Low Risk' ? '5x' : tier === 'Balanced' ? '3x' : '1.5x'} Return on Ad Spend**.
+                This is the **maximum** you should spend on this creator partnership (including their fee and any supporting ad spend) to achieve a **{probability} Return on Ad Spend**.
               </p>
               <p className="text-xs text-black/60 leading-relaxed">
                 If the creator asks for more than this, the simulation suggests you will likely lose money or fail to meet your target ROI.
               </p>
             </div>
 
-            <button 
-              onClick={onDownload}
-              className="w-full py-3 rounded-xl border border-black/10 text-xs font-bold uppercase tracking-widest hover:bg-black hover:text-white transition-all flex items-center justify-center gap-2"
-            >
-              <Download size={14} />
-              Download Calculation Flow
-            </button>
+            <div className="flex flex-col sm:flex-row gap-3">
+              <button 
+                onClick={onDownload}
+                className="flex-1 py-3 rounded-xl border border-black/10 text-[10px] font-black uppercase tracking-widest hover:bg-black hover:text-white transition-all flex items-center justify-center gap-2"
+              >
+                <Download size={14} />
+                Calculation Flow
+              </button>
+              <button 
+                onClick={onGenerateGuide}
+                className="flex-1 py-3 rounded-xl bg-indigo-600 text-white text-[10px] font-black uppercase tracking-widest hover:bg-indigo-700 transition-all flex items-center justify-center gap-2 shadow-lg shadow-indigo-100"
+              >
+                <BookOpen size={14} />
+                Ad Guide
+              </button>
+            </div>
 
             <p className="text-[10px] text-black/40 italic">
               Calculated by simulating 10,000 agents and projecting ROI across your full audience.

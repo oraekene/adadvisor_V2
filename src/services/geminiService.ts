@@ -33,34 +33,31 @@ export async function estimateBenchmarks(creatorData: any, businessData: any) {
   const response = await ai.models.generateContent({
     model: "gemini-3-flash-preview",
     contents: `Based on a ${businessData.business_name} product in the ${businessData.niche || 'general'} niche advertising on ${creatorData.creator_name}'s channel (${creatorData.demographics}), estimate realistic industry benchmarks.
-    Return JSON: { engagement_rate: number, conversion_rate: number, average_cpc: number }`,
+    Return JSON: { engagement_rate: number, conversion_rate: number, average_cpc: number, average_cpm: number }`,
     config: {
-      systemInstruction: "You are a media buying expert. Provide conservative, realistic estimates for digital advertising benchmarks (0-1 scale).",
+      systemInstruction: "You are a media buying expert. Provide conservative, realistic estimates for digital advertising benchmarks (0-1 scale for rates, absolute values for CPC/CPM).",
       responseMimeType: "application/json",
       responseSchema: {
         type: Type.OBJECT,
         properties: {
           engagement_rate: { type: Type.NUMBER },
           conversion_rate: { type: Type.NUMBER },
-          average_cpc: { type: Type.NUMBER }
+          average_cpc: { type: Type.NUMBER },
+          average_cpm: { type: Type.NUMBER }
         },
-        required: ["engagement_rate", "conversion_rate", "average_cpc"]
+        required: ["engagement_rate", "conversion_rate", "average_cpc", "average_cpm"]
       }
     }
   });
   return JSON.parse(response.text || "{}");
 }
 
-export async function generateAdGuide(simulation: any, personas: Persona[]) {
+export async function generateAdGuide(simulation: any, personas: Persona[], targetROAS: number, budgetInfo: any) {
   const estimatedClicks = Math.round(simulation.audience_size * (simulation.discovered_click_rate || 0));
   const estimatedSales = Math.round(simulation.audience_size * (simulation.discovered_conversion_rate || 0));
   const estimatedRevenue = estimatedSales * simulation.product_price;
   
-  // Calculate effective metrics for the "Balanced" (3x ROAS) tier
-  const balancedBudget = simulation.predicted_med_price;
-  const effectiveCPC = estimatedClicks > 0 ? balancedBudget / estimatedClicks : 0;
-  const effectiveCPM = (balancedBudget / simulation.audience_size) * 1000;
-  const effectiveCPA = estimatedSales > 0 ? balancedBudget / estimatedSales : 0;
+  const { budget, scenario, reachCost, creatorFee, gap, cpa, cpc, cpm } = budgetInfo;
 
   const response = await ai.models.generateContent({
     model: "gemini-3-flash-preview",
@@ -85,11 +82,15 @@ export async function generateAdGuide(simulation: any, personas: Persona[]) {
     - Estimated Sales: ${estimatedSales.toLocaleString()}
     - Estimated Revenue: $${estimatedRevenue.toLocaleString()}
     
-    BUDGET CONTEXT (Balanced 3x ROAS Tier):
-    - Total Budget: $${balancedBudget.toLocaleString()}
-    - Effective CPC (Cost Per Click): $${effectiveCPC.toFixed(2)}
-    - Effective CPM (Cost Per 1,000 Impressions): $${effectiveCPM.toFixed(2)}
-    - Effective CPA (Target Cost Per Acquisition): $${effectiveCPA.toFixed(2)}
+    BUDGET CONTEXT (Target ${targetROAS}x ROAS):
+    - Total Budget: $${budget.toLocaleString()}
+    - Scenario: ${scenario === 'A' ? 'Creator Fee > Gap (ROAS will be lower than target)' : 'Creator Fee < Gap (Budget includes extra for frequency/contingency)'}
+    - Creator Fee: $${creatorFee.toLocaleString()}
+    - Paid Media Reach Cost (Deterministic): $${reachCost.toLocaleString()}
+    - Gap/Extra: $${Math.abs(gap).toLocaleString()}
+    - Effective CPC: $${cpc.toFixed(2)}
+    - Effective CPM: $${cpm.toFixed(2)}
+    - Effective CPA: $${cpa.toFixed(2)}
     
     AUDIENCE PSYCHOGRAPHICS:
     Top Personas: ${personas.map((p: any) => `${p.vals_segment} (${p.decision_style} style)`).join(', ')}
@@ -101,10 +102,11 @@ export async function generateAdGuide(simulation: any, personas: Persona[]) {
     4. Pricing Presentation: How to anchor the $${simulation.product_price} price point.
     5. Call to Action: A specific, trackable CTA.
     6. Media Buying Advice: 
-       - Provide a deterministic breakdown of the $${balancedBudget.toLocaleString()} budget.
+       - Provide a deterministic breakdown of the $${budget.toLocaleString()} budget.
        - Include a "Platform Input" section showing exactly what to enter into TikTok/Meta Ads Manager (e.g., Daily Budget, Bid Cap, Optimization Goal).
        - Provide a 30-day spend schedule (Day 1-7: Testing, Day 8-30: Scaling).
-       - Explain how to use the Effective CPC ($${effectiveCPC.toFixed(2)}) as a benchmark for pausing underperforming creative.
+       - Explain how to use the Effective CPC ($${cpc.toFixed(2)}) as a benchmark for pausing underperforming creative.
+       - Address the specific Scenario (${scenario}): ${scenario === 'A' ? 'Explain that the creator fee is high relative to the audience reach, so the paid media spend is lean and must be highly targeted.' : 'Explain how to use the extra $'+gap.toLocaleString()+' for increased frequency or contingency.'}
     
     IMPORTANT: Do NOT hallucinate unrelated products. Focus strictly on ${simulation.business_name} and its description: ${simulation.product_description}.`,
     config: {
