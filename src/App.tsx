@@ -40,6 +40,7 @@ export default function App() {
   const [expandedPriceCard, setExpandedPriceCard] = useState<string | null>(null);
   const [isEstimating, setIsEstimating] = useState(false);
   const [adGuide, setAdGuide] = useState<string | null>(null);
+  const [selectedGuideKey, setSelectedGuideKey] = useState<string>('organic');
   const [isGeneratingGuide, setIsGeneratingGuide] = useState(false);
   const [showGuideModal, setShowGuideModal] = useState(false);
 
@@ -65,6 +66,17 @@ export default function App() {
     fetchSimulations();
   }, []);
 
+  const downloadAdGuide = (sim: Simulation, key: string) => {
+    const guides = sim.ad_guides ? JSON.parse(sim.ad_guides) : {};
+    const content = guides[key] || sim.ad_guide || 'No guide content found.';
+    const blob = new Blob([content], { type: 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${sim.business_name.replace(/\s+/g, '_')}_Ad_Guide_${key}.md`;
+    a.click();
+  };
+
   const fetchSimulations = async (retries = 3) => {
     try {
       const res = await fetch('/api/simulations');
@@ -83,18 +95,22 @@ export default function App() {
   const downloadCalculationFlow = (sim: Simulation, targetROAS: number, budget: number) => {
     const budgets = sim.calculated_budgets ? JSON.parse(sim.calculated_budgets) : [];
     const b = budgets.find((x: any) => x.target === targetROAS) || {};
+    const audienceSize = sim.audience_size || 0;
+    const cpm = sim.cpm || 0;
+    const reachCost = Math.round((audienceSize / 1000) * cpm);
+    
     const flow = `
 CALCULATION FLOW: ${sim.business_name} x ${sim.creator_name}
 Target ROAS: ${targetROAS}x
 --------------------------------------------------
 
 1. INPUTS (Starting Guesses)
-- Audience Size: ${(sim.audience_size || 0).toLocaleString()}
+- Audience Size: ${audienceSize.toLocaleString()}
 - Product Price: $${sim.product_price || 0}
 - Engagement Rate (Guess): ${((sim.engagement_rate || 0) * 100).toFixed(2)}%
 - Conversion Rate (Guess): ${((sim.conversion_rate || 0) * 100).toFixed(2)}%
 - Creator Fee: $${(sim.creator_fee || 0).toLocaleString()}
-- CPM: $${(sim.cpm || 0).toFixed(2)}
+- CPM: $${cpm.toFixed(2)}
 
 2. SIMULATION DISCOVERY (Monte Carlo Results)
 - Discovered Click Rate: ${((sim.discovered_click_rate || 0) * 100).toFixed(4)}%
@@ -103,19 +119,21 @@ Target ROAS: ${targetROAS}x
   (Calculated by observing purchase decisions among clicking agents)
 
 3. PROJECTIONS
-- Total Estimated Clicks: ${Math.round((sim.audience_size || 0) * (sim.discovered_click_rate || 0)).toLocaleString()}
-- Total Estimated Sales: ${Math.round((sim.audience_size || 0) * (sim.discovered_conversion_rate || 0)).toLocaleString()}
-- Total Estimated Revenue: $${Math.round((sim.audience_size || 0) * (sim.discovered_conversion_rate || 0) * (sim.product_price || 0)).toLocaleString()}
+- Total Estimated Clicks: ${Math.round(audienceSize * (sim.discovered_click_rate || 0)).toLocaleString()}
+- Total Estimated Sales: ${Math.round(audienceSize * (sim.discovered_conversion_rate || 0)).toLocaleString()}
+- Total Estimated Revenue: $${Math.round(audienceSize * (sim.discovered_conversion_rate || 0) * (sim.product_price || 0)).toLocaleString()}
 
 4. BUDGET CALCULATION
 - Formula: Total Estimated Revenue / Target ROAS
-- Calculation: $${Math.round((sim.audience_size || 0) * (sim.discovered_conversion_rate || 0) * (sim.product_price || 0)).toLocaleString()} / ${targetROAS}
+- Calculation: $${Math.round(audienceSize * (sim.discovered_conversion_rate || 0) * (sim.product_price || 0)).toLocaleString()} / ${targetROAS}
 - Suggested Budget: $${Math.ceil(budget || 0).toLocaleString()}
 
-5. DETERMINISTIC MEDIA BUYING BRIDGE
-- Reach Cost (to acquire ${(sim.audience_size || 0).toLocaleString()} impressions): $${Math.round(((sim.audience_size || 0) / 1000) * (sim.cpm || 0)).toLocaleString()}
+5. DETERMINISTIC MEDIA BUYING BRIDGE (CPM Formula)
+- Formula: Reach Cost = (Audience Size / 1000) * CPM
+- Calculation: (${audienceSize.toLocaleString()} / 1000) * $${cpm.toFixed(2)}
+- Reach Cost: $${reachCost.toLocaleString()}
 - Creator Fee: $${(sim.creator_fee || 0).toLocaleString()}
-- Total Required Spend: $${(Math.round(((sim.audience_size || 0) / 1000) * (sim.cpm || 0)) + (sim.creator_fee || 0)).toLocaleString()}
+- Total Required Spend: $${(reachCost + (sim.creator_fee || 0)).toLocaleString()}
 - Target CPA: $${(b.cpa || 0).toFixed(2)}
 - Target CPC: $${(b.cpc || 0).toFixed(2)}
 
@@ -162,6 +180,13 @@ to maintain a ${targetROAS}x ROAS based on the simulated audience behavior.
 
   const downloadFullReport = (sim: Simulation) => {
     const budgets = sim.calculated_budgets ? JSON.parse(sim.calculated_budgets) : [];
+    const audienceSize = sim.audience_size || 0;
+    const cpm = sim.cpm || 0;
+    const reachCost = Math.round((audienceSize / 1000) * cpm);
+    
+    const guides = sim.ad_guides ? JSON.parse(sim.ad_guides) : {};
+    const selectedGuide = guides[selectedGuideKey] || sim.ad_guide || 'No guide generated for this selection.';
+
     const report = `
 ATTRIBUTION AI - FULL SIMULATION REPORT
 Generated: ${new Date(sim.created_at).toLocaleString()}
@@ -175,16 +200,21 @@ Campaign Goal: ${sim.campaign_goal}
 Product Price: $${sim.product_price}
 Margin: ${sim.margin * 100}%
 Creator Fee: $${(sim.creator_fee || 0).toLocaleString()}
-CPM: $${(sim.cpm || 0).toFixed(2)}
+CPM: $${cpm.toFixed(2)}
 
 CAMPAIGN TARGETING
 Creator: ${sim.creator_name}
-Audience Size: ${sim.audience_size.toLocaleString()}
+Audience Size: ${audienceSize.toLocaleString()}
 Demographics: ${sim.demographics}
 
 DISCOVERED PERFORMANCE (Simulated)
 Discovered Click Rate: ${((sim.discovered_click_rate || 0) * 100).toFixed(4)}%
 Discovered Conversion Rate: ${((sim.discovered_conversion_rate || 0) * 100).toFixed(4)}%
+
+MEDIA BUYING CALCULATIONS (CPM Formula)
+- Formula: Reach Cost = (Audience Size / 1000) * CPM
+- Calculation: (${audienceSize.toLocaleString()} / 1000) * $${cpm.toFixed(2)}
+- Reach Cost: $${reachCost.toLocaleString()}
 
 BID RECOMMENDATIONS (Total Campaign Budget)
 ${budgets.map((b: any) => `
@@ -211,8 +241,8 @@ PERSONA #${i + 1}: ${p.vals_segment}
 `).join('\n')}
 
 --------------------------------------------------
-AD CREATION GUIDE
-${sim.ad_guide || 'No guide generated for this simulation.'}
+AD CREATION GUIDE (${selectedGuideKey === 'organic' ? 'Organic Strategy' : `${selectedGuideKey}x ROAS Strategy`})
+${selectedGuide}
 
 --------------------------------------------------
 This report is generated by Attribution AI. 
@@ -226,39 +256,82 @@ Use these findings to negotiate creator rates and optimize your ad creative.
     a.click();
   };
 
-  const handleSaveGuide = async () => {
-    if (!activeSim || !adGuide) return;
+  const handleSaveGuide = async (key: string, content: string) => {
+    if (!activeSim) return;
     try {
+      const currentGuides = activeSim.ad_guides ? JSON.parse(activeSim.ad_guides) : {};
+      const updatedGuides = { ...currentGuides, [key]: content };
+      
       await fetch(`/api/simulations/${activeSim.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ad_guide: adGuide })
+        body: JSON.stringify({ ad_guides: JSON.stringify(updatedGuides) })
       });
-      setActiveSim({ ...activeSim, ad_guide: adGuide });
+      
+      setActiveSim({ ...activeSim, ad_guides: JSON.stringify(updatedGuides) });
       fetchSimulations();
     } catch (err) {
       console.error("Failed to save ad guide", err);
     }
   };
 
-  const handleGenerateGuide = async (budgetObj?: any) => {
+  const handleGenerateGuide = async (targetKey: string = 'organic') => {
     if (!activeSim) return;
     setIsGeneratingGuide(true);
     setShowGuideModal(true);
+    setSelectedGuideKey(targetKey);
+    
     try {
       const budgets = activeSim.calculated_budgets ? JSON.parse(activeSim.calculated_budgets) : [];
-      const selectedBudget = budgetObj || budgets[1] || budgets[0];
+      let selectedBudget;
+      
+      if (targetKey === 'organic') {
+        selectedBudget = {
+          target: 'organic',
+          budget: activeSim.creator_fee || 0,
+          scenario: 'Organic',
+          reachCost: 0,
+          creatorFee: activeSim.creator_fee || 0,
+          gap: 0,
+          cpa: 0,
+          cpc: 0,
+          cpm: 0
+        };
+      } else {
+        selectedBudget = budgets.find((b: any) => b.target.toString() === targetKey);
+        // Fallback for legacy data
+        if (!selectedBudget && activeSim) {
+          const targetNum = Number(targetKey);
+          const price = targetNum === 5 ? activeSim.predicted_low_price : 
+                        targetNum === 3 ? activeSim.predicted_med_price : 
+                        activeSim.predicted_high_price;
+          selectedBudget = {
+            target: targetNum,
+            budget: price,
+            scenario: 'Legacy',
+            reachCost: Math.round(((activeSim.audience_size || 0) / 1000) * (activeSim.cpm || 0)),
+            creatorFee: activeSim.creator_fee || 0,
+            gap: 0,
+            cpa: 0,
+            cpc: 0,
+            cpm: activeSim.cpm || 0
+          };
+        }
+      }
       
       if (!selectedBudget) {
-        setAdGuide("No budget information found for this simulation. Please run a new simulation to generate a guide with the latest financial modeling.");
+        setAdGuide("No budget information found for this selection.");
         return;
       }
 
-      const guide = await generateAdGuide(activeSim, personas, selectedBudget.target, selectedBudget);
+      const guide = await generateAdGuide(activeSim, personas, targetKey === 'organic' ? 'organic' : Number(targetKey), selectedBudget);
       setAdGuide(guide || "Failed to generate guide.");
+      if (guide) {
+        handleSaveGuide(targetKey, guide);
+      }
     } catch (err: any) {
       console.error("Failed to generate ad guide", err);
-      setAdGuide(`An error occurred: ${err.message || "Unknown error"}. Try running a new simulation.`);
+      setAdGuide(`An error occurred: ${err.message || "Unknown error"}.`);
     } finally {
       setIsGeneratingGuide(false);
     }
@@ -739,7 +812,23 @@ Use these findings to negotiate creator rates and optimize your ad creative.
                     Raw Agent Data (CSV)
                   </button>
                   {activeSim.raw_simulation_log && (
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-col sm:flex-row items-center gap-3">
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[9px] font-black uppercase text-black/40 tracking-widest">Guide to Include</label>
+                        <select 
+                          value={selectedGuideKey}
+                          onChange={(e) => setSelectedGuideKey(e.target.value)}
+                          className="bg-black/5 border-none rounded-xl px-3 py-1.5 text-[10px] font-bold focus:ring-1 ring-black/10"
+                        >
+                          <option value="organic">Organic Strategy</option>
+                          {(() => {
+                            const budgets = activeSim.calculated_budgets ? JSON.parse(activeSim.calculated_budgets) : [];
+                            return budgets.map((b: any) => (
+                              <option key={b.target} value={b.target.toString()}>{b.target}x ROAS Strategy</option>
+                            ));
+                          })()}
+                        </select>
+                      </div>
                       <button 
                         onClick={() => downloadFullReport(activeSim)}
                         className="flex items-center gap-2 px-4 py-2 bg-black text-white rounded-xl text-xs font-bold hover:bg-black/80 transition-all shadow-lg shadow-black/10"
@@ -750,11 +839,11 @@ Use these findings to negotiate creator rates and optimize your ad creative.
                     </div>
                   )}
                   <button 
-                    onClick={handleGenerateGuide}
+                    onClick={() => handleGenerateGuide('organic')}
                     className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl text-xs font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-200"
                   >
                     <BookOpen size={14} />
-                    Ad Creation Guide
+                    Organic Strategy Guide
                   </button>
                   {loading && (
                     <div className="flex flex-col items-start md:items-end gap-2 w-full md:w-auto">
@@ -814,7 +903,7 @@ Use these findings to negotiate creator rates and optimize your ad creative.
                           isExpanded={expandedPriceCard === `tier-${i}`}
                           onToggle={() => setExpandedPriceCard(expandedPriceCard === `tier-${i}` ? null : `tier-${i}`)}
                           onDownload={(e) => { e.stopPropagation(); downloadCalculationFlow(activeSim, b.target, b.price); }}
-                          onGenerateGuide={(e) => { e.stopPropagation(); handleGenerateGuide({ target: b.target, budget: b.price }); }}
+                          onGenerateGuide={(e) => { e.stopPropagation(); handleGenerateGuide(b.target.toString()); }}
                         />
                       ));
                     }
@@ -833,7 +922,7 @@ Use these findings to negotiate creator rates and optimize your ad creative.
                         isExpanded={expandedPriceCard === `tier-${i}`}
                         onToggle={() => setExpandedPriceCard(expandedPriceCard === `tier-${i}` ? null : `tier-${i}`)}
                         onDownload={(e) => { e.stopPropagation(); downloadCalculationFlow(activeSim, b.target, b.budget); }}
-                        onGenerateGuide={(e) => { e.stopPropagation(); handleGenerateGuide(b); }}
+                        onGenerateGuide={(e) => { e.stopPropagation(); handleGenerateGuide(b.target.toString()); }}
                       />
                     ));
                   })()}
@@ -1092,22 +1181,22 @@ Use these findings to negotiate creator rates and optimize your ad creative.
 
               <div className="p-6 sm:p-8 border-t border-black/5 bg-black/[0.02] flex flex-col sm:flex-row gap-4 justify-between items-center">
                 <p className="text-[10px] text-black/40 font-bold uppercase tracking-widest max-w-[200px] text-center sm:text-left">
-                  {activeSim.ad_guide ? "Guide is saved to this simulation." : "Save this guide to access it later."}
+                  {activeSim.ad_guides && JSON.parse(activeSim.ad_guides)[selectedGuideKey] ? "Guide is saved to this simulation." : "Save this guide to access it later."}
                 </p>
                 <div className="flex gap-3 w-full sm:w-auto">
                   <button 
-                    onClick={handleGenerateGuide}
+                    onClick={() => downloadAdGuide(activeSim, selectedGuideKey)}
+                    className="flex-1 sm:flex-none px-6 py-3 bg-black text-white rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-black/80 transition-all flex items-center justify-center gap-2"
+                  >
+                    <Download size={14} />
+                    Download Guide
+                  </button>
+                  <button 
+                    onClick={() => handleGenerateGuide(selectedGuideKey)}
                     disabled={isGeneratingGuide}
                     className="flex-1 sm:flex-none px-6 py-3 bg-white border border-black/10 text-black rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-black/5 transition-all disabled:opacity-50"
                   >
                     Regenerate
-                  </button>
-                  <button 
-                    onClick={handleSaveGuide}
-                    disabled={isGeneratingGuide || !adGuide}
-                    className="flex-1 sm:flex-none px-8 py-3 bg-indigo-600 text-white rounded-2xl text-sm font-black uppercase tracking-widest hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-200 disabled:opacity-50"
-                  >
-                    Save Guide
                   </button>
                 </div>
               </div>

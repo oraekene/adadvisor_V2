@@ -52,7 +52,7 @@ export async function estimateBenchmarks(creatorData: any, businessData: any) {
   return JSON.parse(response.text || "{}");
 }
 
-export async function generateAdGuide(simulation: any, personas: Persona[], targetROAS: number, budgetInfo: any) {
+export async function generateAdGuide(simulation: any, personas: Persona[], targetROAS: number | 'organic', budgetInfo: any) {
   const audienceSize = simulation.audience_size || 0;
   const clickRate = simulation.discovered_click_rate || 0;
   const convRate = simulation.discovered_conversion_rate || 0;
@@ -62,21 +62,25 @@ export async function generateAdGuide(simulation: any, personas: Persona[], targ
   const estimatedSales = Math.round(audienceSize * convRate);
   const estimatedRevenue = estimatedSales * productPrice;
   
+  const isOrganic = targetROAS === 'organic';
+  
   const { 
-    budget = 0, 
-    scenario = 'B', 
-    reachCost = 0, 
-    creatorFee = 0, 
+    budget = isOrganic ? (simulation.creator_fee || 0) : 0, 
+    scenario = isOrganic ? 'Organic' : 'B', 
+    reachCost = isOrganic ? 0 : 0, 
+    creatorFee = simulation.creator_fee || 0, 
     gap = 0, 
-    cpa = 0, 
-    cpc = 0, 
-    cpm = 0 
+    cpa = isOrganic ? (simulation.creator_fee / estimatedSales) : 0, 
+    cpc = isOrganic ? (simulation.creator_fee / estimatedClicks) : 0, 
+    cpm = isOrganic ? (simulation.creator_fee / audienceSize * 1000) : 0 
   } = budgetInfo || {};
 
   const response = await ai.models.generateContent({
     model: "gemini-3-flash-preview",
     contents: `Generate a high-converting, professional ad creation guide for a creator partnership.
     
+    CAMPAIGN TYPE: ${isOrganic ? 'STRICTLY ORGANIC (No Paid Media Support)' : `PAID MEDIA SUPPORTED (${targetROAS}x ROAS Target)`}
+
     CAMPAIGN DETAILS:
     Business: ${simulation.business_name}
     Product Description: ${simulation.product_description}
@@ -96,15 +100,19 @@ export async function generateAdGuide(simulation: any, personas: Persona[], targ
     - Estimated Sales: ${estimatedSales.toLocaleString()}
     - Estimated Revenue: $${estimatedRevenue.toLocaleString()}
     
-    BUDGET CONTEXT (Target ${targetROAS || 3}x ROAS):
+    BUDGET CONTEXT:
     - Total Budget: $${(budget || 0).toLocaleString()}
-    - Scenario: ${scenario === 'A' ? 'Creator Fee > Gap (ROAS will be lower than target)' : 'Creator Fee < Gap (Budget includes extra for frequency/contingency)'}
     - Creator Fee: $${(creatorFee || 0).toLocaleString()}
-    - Paid Media Reach Cost (Deterministic): $${(reachCost || 0).toLocaleString()}
+    ${!isOrganic ? `
+    - Paid Media Reach Cost: $${(reachCost || 0).toLocaleString()} (Formula: (Audience / 1000) * CPM)
     - Gap/Extra: $${Math.abs(gap || 0).toLocaleString()}
     - Effective CPC: $${(cpc || 0).toFixed(2)}
     - Effective CPM: $${(cpm || 0).toFixed(2)}
     - Effective CPA: $${(cpa || 0).toFixed(2)}
+    ` : `
+    - Note: This is a strictly organic campaign. No additional ad spend is allocated beyond the creator fee.
+    - Effective CPA (Organic): $${(cpa || 0).toFixed(2)}
+    `}
     
     AUDIENCE PSYCHOGRAPHICS:
     Top Personas: ${personas.map((p: any) => `${p.vals_segment} (${p.decision_style} style)`).join(', ')}
@@ -115,12 +123,18 @@ export async function generateAdGuide(simulation: any, personas: Persona[], targ
     3. Messaging Strategy: How to weave the USPs into the creator's natural content style.
     4. Pricing Presentation: How to anchor the $${productPrice} price point.
     5. Call to Action: A specific, trackable CTA.
-    6. Media Buying Advice: 
+    6. Strategy Advice: 
+       ${isOrganic ? `
+       - Focus on organic virality and community engagement.
+       - How to maximize the creator's natural reach without paid amplification.
+       - Best times to post based on the target demographics.
+       ` : `
        - Provide a deterministic breakdown of the $${(budget || 0).toLocaleString()} budget.
        - Include a "Platform Input" section showing exactly what to enter into TikTok/Meta Ads Manager (e.g., Daily Budget, Bid Cap, Optimization Goal).
        - Provide a 30-day spend schedule (Day 1-7: Testing, Day 8-30: Scaling).
        - Explain how to use the Effective CPC ($${(cpc || 0).toFixed(2)}) as a benchmark for pausing underperforming creative.
        - Address the specific Scenario (${scenario}): ${scenario === 'A' ? 'Explain that the creator fee is high relative to the audience reach, so the paid media spend is lean and must be highly targeted.' : 'Explain how to use the extra $'+(gap || 0).toLocaleString()+' for increased frequency or contingency.'}
+       `}
     
     IMPORTANT: Do NOT hallucinate unrelated products. Focus strictly on ${simulation.business_name} and its description: ${simulation.product_description}.`,
     config: {

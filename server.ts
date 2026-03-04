@@ -159,8 +159,11 @@ async function startServer() {
         if (error) throw error;
         return res.json({ success: true });
       } else if (db) {
-        const { actual_spend, actual_revenue, ad_guide } = req.body;
-        if (ad_guide !== undefined) {
+        const { actual_spend, actual_revenue, ad_guide, ad_guides } = req.body;
+        if (ad_guides !== undefined) {
+          const stmt = db.prepare("UPDATE simulations SET ad_guides = ? WHERE id = ?");
+          stmt.run(ad_guides, req.params.id);
+        } else if (ad_guide !== undefined) {
           const stmt = db.prepare("UPDATE simulations SET ad_guide = ? WHERE id = ?");
           stmt.run(ad_guide, req.params.id);
         } else {
