@@ -118,6 +118,16 @@ to maintain a ${targetROAS}x ROAS based on the simulated audience behavior.
     a.click();
   };
 
+  const downloadRawLog = (sim: Simulation) => {
+    if (!sim.raw_simulation_log) return;
+    const blob = new Blob([sim.raw_simulation_log], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `raw_agents_${sim.id}.csv`;
+    a.click();
+  };
+
   const downloadFullReport = (sim: Simulation) => {
     const report = `
 ATTRIBUTION AI - FULL SIMULATION REPORT
@@ -286,11 +296,8 @@ Use these findings to negotiate creator rates and optimize your ad creative.
         if (result.bought) mcBought++;
         if (result.clicked) mcClicked++;
 
-        // We limit the log to 1,000 entries to prevent memory/storage overflow,
-        // while still simulating the full 10,000+ audience.
-        if (i < 1000) { 
-          monteCarloLog.push(`${i},${archetype.id},${archetype.vals_segment},${archetype.decision_style},${result.clicked},${result.bought},${result.score.toFixed(4)}`);
-        }
+        // We log all entries to allow full verification of the 10,000+ audience.
+        monteCarloLog.push(`${i},${archetype.id},${archetype.vals_segment},${archetype.decision_style},${result.clicked},${result.bought},${result.score.toFixed(4)}`);
       }
 
       const buyRate = mcBought / monteCarloCount;
@@ -597,6 +604,13 @@ Use these findings to negotiate creator rates and optimize your ad creative.
                   <h1 className="text-2xl sm:text-4xl font-bold tracking-tight">{activeSim.business_name} × {activeSim.creator_name}</h1>
                 </div>
                 <div className="flex flex-col md:flex-row gap-4 items-start md:items-center">
+                  <button 
+                    onClick={() => downloadRawLog(activeSim)}
+                    className="flex items-center gap-2 px-4 py-2 bg-black/5 hover:bg-black/10 rounded-xl text-xs font-bold uppercase tracking-widest transition-all"
+                  >
+                    <Download size={14} />
+                    Raw Agent Data (CSV)
+                  </button>
                   {activeSim.raw_simulation_log && (
                     <div className="flex items-center gap-2">
                       <button 
@@ -605,20 +619,6 @@ Use these findings to negotiate creator rates and optimize your ad creative.
                       >
                         <FileText size={14} />
                         Download Full Report
-                      </button>
-                      <button 
-                        onClick={() => {
-                          const blob = new Blob([activeSim.raw_simulation_log!], { type: 'text/csv' });
-                          const url = window.URL.createObjectURL(blob);
-                          const a = document.createElement('a');
-                          a.href = url;
-                          a.download = `simulation_log_${activeSim.id}.csv`;
-                          a.click();
-                        }}
-                        className="flex items-center gap-2 px-4 py-2 bg-white border border-black/10 rounded-xl text-xs font-bold hover:bg-black/5 transition-all"
-                      >
-                        <Download size={14} />
-                        Raw Log (.csv)
                       </button>
                     </div>
                   )}
